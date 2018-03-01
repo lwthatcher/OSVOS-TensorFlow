@@ -22,7 +22,7 @@ from dataset import Dataset
 os.chdir(root_folder)
 
 # User defined parameters
-seq_name = "car-shadow"
+seq_name = "bear"
 gpu_id = 0
 train_model = True
 result_path = os.path.join('DAVIS', 'Results', 'Segmentations', '480p', 'OSVOS', seq_name)
