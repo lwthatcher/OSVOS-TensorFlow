@@ -149,11 +149,10 @@ def interp_surgery(variables):
             h, w, k, m = v.get_shape()
             tmp = np.zeros((m, k, h, w))
             if m != k:
-                print('input + output channels need to be the same')
-                raise
+                print()
+                raise ValueError('input + output channels need to be the same: {}, {}'.format(m, k))
             if h != w:
-                print('filters need to be square')
-                raise
+                raise ValueError('filters need to be square: {}, {}'.format(h, w))
             up_filter = upsample_filt(int(h))
             tmp[range(m), range(k), :, :] = up_filter
             interp_tensors.append(tf.assign(v, tmp.transpose((2, 3, 1, 0)), validate_shape=True, use_locking=True))
