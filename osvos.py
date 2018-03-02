@@ -19,6 +19,7 @@ from PIL import Image
 slim = tf.contrib.slim
 
 
+# region OSVOS Network
 def osvos_arg_scope(weight_decay=0.0002):
     """Defines the OSVOS arg scope.
     Args:
@@ -34,22 +35,6 @@ def osvos_arg_scope(weight_decay=0.0002):
                         biases_regularizer=None,
                         padding='SAME') as arg_sc:
         return arg_sc
-
-
-def crop_features(feature, out_size):
-    """Crop the center of a feature map
-    Args:
-    feature: Feature map to crop
-    out_size: Size of the output feature map
-    Returns:
-    Tensor that performs the cropping
-    """
-    up_size = tf.shape(feature)
-    ini_w = tf.div(tf.subtract(up_size[1], out_size[1]), 2)
-    ini_h = tf.div(tf.subtract(up_size[2], out_size[2]), 2)
-    slice_input = tf.slice(feature, (0, ini_w, ini_h, 0), (-1, out_size[1], out_size[2], -1))
-    # slice_input = tf.slice(feature, (0, ini_w, ini_w, 0), (-1, out_size[1], out_size[2], -1))  # Caffe cropping way
-    return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 
 def osvos(inputs, scope='osvos'):
@@ -128,6 +113,24 @@ def osvos(inputs, scope='osvos'):
 
         end_points = slim.utils.convert_collection_to_dict(end_points_collection)
         return net, end_points
+# endregion
+
+
+# region Helper Methods
+def crop_features(feature, out_size):
+    """Crop the center of a feature map
+    Args:
+    feature: Feature map to crop
+    out_size: Size of the output feature map
+    Returns:
+    Tensor that performs the cropping
+    """
+    up_size = tf.shape(feature)
+    ini_w = tf.div(tf.subtract(up_size[1], out_size[1]), 2)
+    ini_h = tf.div(tf.subtract(up_size[2], out_size[2]), 2)
+    slice_input = tf.slice(feature, (0, ini_w, ini_h, 0), (-1, out_size[1], out_size[2], -1))
+    # slice_input = tf.slice(feature, (0, ini_w, ini_w, 0), (-1, out_size[1], out_size[2], -1))  # Caffe cropping way
+    return tf.reshape(slice_input, [int(feature.get_shape()[0]), out_size[1], out_size[2], int(feature.get_shape()[3])])
 
 
 def upsample_filt(size):
@@ -214,59 +217,6 @@ def load_vgg_imagenet(ckpt_path):
         ckpt_path,
         vars_corresp)
     return init_fn
-
-
-def class_balanced_cross_entropy_loss(output, label, name=""):
-    """Define the class balanced cross entropy loss to train the network
-    Args:
-    output: Output of the network
-    label: Ground truth label
-    Returns:
-    Tensor that evaluates the loss
-    """
-    _name = "cross-entropy" + name
-    with tf.name_scope(_name):
-        labels = tf.cast(tf.greater(label, 0.5), tf.float32)
-
-        num_labels_pos = tf.reduce_sum(labels)
-        num_labels_neg = tf.reduce_sum(1.0 - labels)
-        num_total = num_labels_pos + num_labels_neg
-
-        output_gt_zero = tf.cast(tf.greater_equal(output, 0), tf.float32)
-        loss_val = tf.multiply(output, (labels - output_gt_zero)) - tf.log(
-            1 + tf.exp(output - 2 * tf.multiply(output, output_gt_zero)))
-
-        loss_pos = tf.reduce_sum(-tf.multiply(labels, loss_val))
-        loss_neg = tf.reduce_sum(-tf.multiply(1.0 - labels, loss_val))
-
-        final_loss = num_labels_neg / num_total * loss_pos + num_labels_pos / num_total * loss_neg
-
-    return final_loss
-
-
-def class_balanced_cross_entropy_loss_theoretical(output, label):
-    """Theoretical version of the class balanced cross entropy loss to train the network (Produces unstable results)
-    Args:
-    output: Output of the network
-    label: Ground truth label
-    Returns:
-    Tensor that evaluates the loss
-    """
-    output = tf.nn.sigmoid(output)
-
-    labels_pos = tf.cast(tf.greater(label, 0), tf.float32)
-    labels_neg = tf.cast(tf.less(label, 1), tf.float32)
-
-    num_labels_pos = tf.reduce_sum(labels_pos)
-    num_labels_neg = tf.reduce_sum(labels_neg)
-    num_total = num_labels_pos + num_labels_neg
-
-    loss_pos = tf.reduce_sum(tf.multiply(labels_pos, tf.log(output + 0.00001)))
-    loss_neg = tf.reduce_sum(tf.multiply(labels_neg, tf.log(1 - output + 0.00001)))
-
-    final_loss = -num_labels_neg / num_total * loss_pos - num_labels_pos / num_total * loss_neg
-
-    return final_loss
 
 
 def load_caffe_weights(weights_path):
@@ -393,8 +343,65 @@ def parameter_lr():
     vars_corresp['osvos/upscore-fuse/weights'] = 0.01
     vars_corresp['osvos/upscore-fuse/biases'] = 0.02
     return vars_corresp
+# endregion
 
 
+# region Loss Functions
+def class_balanced_cross_entropy_loss(output, label, name=""):
+    """Define the class balanced cross entropy loss to train the network
+    Args:
+    output: Output of the network
+    label: Ground truth label
+    Returns:
+    Tensor that evaluates the loss
+    """
+    _name = "cross-entropy" + name
+    with tf.name_scope(_name):
+        labels = tf.cast(tf.greater(label, 0.5), tf.float32)
+
+        num_labels_pos = tf.reduce_sum(labels)
+        num_labels_neg = tf.reduce_sum(1.0 - labels)
+        num_total = num_labels_pos + num_labels_neg
+
+        output_gt_zero = tf.cast(tf.greater_equal(output, 0), tf.float32)
+        loss_val = tf.multiply(output, (labels - output_gt_zero)) - tf.log(
+            1 + tf.exp(output - 2 * tf.multiply(output, output_gt_zero)))
+
+        loss_pos = tf.reduce_sum(-tf.multiply(labels, loss_val))
+        loss_neg = tf.reduce_sum(-tf.multiply(1.0 - labels, loss_val))
+
+        final_loss = num_labels_neg / num_total * loss_pos + num_labels_pos / num_total * loss_neg
+
+    return final_loss
+
+
+def class_balanced_cross_entropy_loss_theoretical(output, label):
+    """Theoretical version of the class balanced cross entropy loss to train the network (Produces unstable results)
+    Args:
+    output: Output of the network
+    label: Ground truth label
+    Returns:
+    Tensor that evaluates the loss
+    """
+    output = tf.nn.sigmoid(output)
+
+    labels_pos = tf.cast(tf.greater(label, 0), tf.float32)
+    labels_neg = tf.cast(tf.less(label, 1), tf.float32)
+
+    num_labels_pos = tf.reduce_sum(labels_pos)
+    num_labels_neg = tf.reduce_sum(labels_neg)
+    num_total = num_labels_pos + num_labels_neg
+
+    loss_pos = tf.reduce_sum(tf.multiply(labels_pos, tf.log(output + 0.00001)))
+    loss_neg = tf.reduce_sum(tf.multiply(labels_neg, tf.log(1 - output + 0.00001)))
+
+    final_loss = -num_labels_neg / num_total * loss_pos - num_labels_pos / num_total * loss_neg
+
+    return final_loss
+# endregion
+
+
+# region Train Method
 def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
            test_image_path=None, ckpt_name="osvos"):
@@ -580,8 +587,10 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
             print("Model saved in file: {}".format(save_path))
 
         print('Finished training.')
+# endregion
 
 
+# region Training Wrappers
 def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
                  display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
                  config=None, test_image_path=None, ckpt_name="osvos"):
@@ -608,6 +617,7 @@ def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, 
     _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
            ckpt_name)
+# endregion
 
 
 def test(dataset, checkpoint_file, result_path, config=None):
