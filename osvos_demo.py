@@ -24,11 +24,12 @@ import osvos
 from dataset import Dataset
 os.chdir(root_folder)
 
-# constants
-KNOWN_SETS = ['bear', 'blackswan', 'bmx-bumps', 'boat', 'breakdance', 'breakdance-flare', 'bus', 'dog']
+# define acceptable sequences
+_path = os.path.join('DAVIS', 'JPEGImages', '480p')
+known_sequences = next(os.walk(_path))[1]
 
 
-def run_demo(seq_name, max_training_iters=500,  **kwargs):
+def run_demo(seq_name, max_training_iters=500, **kwargs):
     # User Defined parameters
     gpu_id = kwargs.get('gpu_id', 0)
     train_model = kwargs.get('train_model', True)
@@ -44,10 +45,6 @@ def run_demo(seq_name, max_training_iters=500,  **kwargs):
     save_step = kwargs.get('save_step', max_training_iters)
     display_step = kwargs.get('display_step', 10)
 
-
-
-
-
     # Define Dataset
     test_frames = sorted(os.listdir(os.path.join('DAVIS', 'JPEGImages', '480p', seq_name)))
     test_imgs = [os.path.join('DAVIS', 'JPEGImages', '480p', seq_name, frame) for frame in test_frames]
@@ -60,8 +57,6 @@ def run_demo(seq_name, max_training_iters=500,  **kwargs):
 
     # Train the network
     if train_model:
-        # More training parameters
-
         with tf.Graph().as_default():
             with tf.device('/gpu:' + str(gpu_id)):
                 global_step = tf.Variable(0, name='global_step', trainable=False)
@@ -75,15 +70,35 @@ def run_demo(seq_name, max_training_iters=500,  **kwargs):
             osvos.test(dataset, checkpoint_path, result_path)
 
 
+def _sanitize_kwargs(kwargs):
+    keys_to_remove = []
+    for k,v in kwargs.items():
+        if v is None:
+            keys_to_remove.append(k)
+    for k in keys_to_remove:
+        del kwargs[k]
+    return kwargs
+
+
 if __name__ == "__main__":
     # define parser
     parser = argparse.ArgumentParser('parameters for running OSVOS')
-    parser.add_argument('seq_name', choices=KNOWN_SETS, help='the name of the sequence to run')
+    parser.add_argument('seq_name', choices=known_sequences, help='the name of the sequence to run')
+    parser.add_argument('--epochs', '-t', dest='max_training_iters', default=500, type=int,
+                        help='number of epochs to train for')
+    parser.add_argument('--gpu-id', type=int, help='the id if the GPU to use')
+    parser.add_argument('--supervision', dest='side_supervision', choices=[1, 2, 3], type=int,
+                        help='Level of the side outputs supervision: 1-Strong 2-Weak 3-No supervision')
+    parser.add_argument('--learning-rate', '-lr', type=float, help='the base learning rate')
+    parser.add_argument('--save-step', '-ss', type=int, help='number of iterations to run before saving')
+    parser.add_argument('--display-step', '-ds', type=int,
+                        help='number of iterations to run before updating the display')
     # parse arguments
     args = parser.parse_args()
     seq = args.seq_name
     kwargs = vars(args)
     del kwargs['seq_name']
+    kwargs = _sanitize_kwargs(kwargs)
     print('Parameters:', kwargs)
     # run learner
     run_demo(seq, **kwargs)
