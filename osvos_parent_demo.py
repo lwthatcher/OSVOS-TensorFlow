@@ -47,7 +47,7 @@ with tf.Graph().as_default():
         global_step = tf.Variable(0, name='global_step', trainable=False)
         learning_rate = tf.train.piecewise_constant(global_step, boundaries, values)
         osvos.train_parent(dataset, imagenet_ckpt, 1, learning_rate, logs_path, max_training_iters_1, save_step,
-                           display_step, global_step, iter_mean_grad=iter_mean_grad, test_image_path=test_image,
+                           global_step, iter_mean_grad=iter_mean_grad, test_image_path=test_image,
                            ckpt_name='OSVOS_parent')
 
 with tf.Graph().as_default():
@@ -55,7 +55,7 @@ with tf.Graph().as_default():
         global_step = tf.Variable(max_training_iters_1, name='global_step', trainable=False)
         learning_rate = tf.train.piecewise_constant(global_step, boundaries, values)
         osvos.train_parent(dataset, imagenet_ckpt, 2, learning_rate, logs_path, max_training_iters_2, save_step,
-                           display_step, global_step, iter_mean_grad=iter_mean_grad, resume_training=True,
+                           global_step, iter_mean_grad=iter_mean_grad, resume_training=True,
                            test_image_path=test_image, ckpt_name='OSVOS_parent')
 
 with tf.Graph().as_default():
@@ -63,5 +63,5 @@ with tf.Graph().as_default():
         global_step = tf.Variable(max_training_iters_2, name='global_step', trainable=False)
         learning_rate = tf.train.piecewise_constant(global_step, boundaries, values)
         osvos.train_parent(dataset, imagenet_ckpt, 3, learning_rate, logs_path, max_training_iters_3, save_step,
-                           display_step, global_step, iter_mean_grad=iter_mean_grad, resume_training=True,
+                           global_step, iter_mean_grad=iter_mean_grad, resume_training=True,
                            test_image_path=test_image, ckpt_name='OSVOS_parent')

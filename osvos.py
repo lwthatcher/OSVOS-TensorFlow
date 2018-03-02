@@ -15,6 +15,7 @@ from datetime import datetime
 import os
 import scipy.misc
 from PIL import Image
+from tqdm import trange
 
 slim = tf.contrib.slim
 
@@ -402,7 +403,8 @@ def class_balanced_cross_entropy_loss_theoretical(output, label):
 
 
 # region Train Method
-def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
+# noinspection PyUnboundLocalVariable
+def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
            global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False, config=None, finetune=1,
            test_image_path=None, ckpt_name="osvos"):
     """Train OSVOS
@@ -551,7 +553,8 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
         print('Weights initialized')
 
         print('Start training')
-        while step < max_training_iters + 1:
+        t = trange(step, max_training_iters + 1)
+        for _step in t:
             # Average the gradient
             for _ in range(0, iter_mean_grad):
                 batch_image, batch_label = dataset.next_batch(batch_size, 'train')
@@ -566,23 +569,21 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
             sess.run(apply_gradient_op)  # Momentum updates here its statistics
 
             # Save summary reports
-            summary_writer.add_summary(summary, step)
+            summary_writer.add_summary(summary, _step)
 
             # Display training status
-            if step % display_step == 0:
-                print("{} Iter {}: Training Loss = {:.4f}".format(datetime.now(), step, batch_loss))
+            t.set_postfix(loss="{:.4f}".format(batch_loss), step=_step)
 
             # Save a checkpoint
-            if step % save_step == 0:
+            if _step % save_step == 0:
                 if test_image_path is not None:
                     curr_output = sess.run(img_summary, feed_dict={input_image: preprocess_img(test_image_path)})
-                    summary_writer.add_summary(curr_output, step)
+                    summary_writer.add_summary(curr_output, _step)
                 save_path = saver.save(sess, model_name, global_step=global_step)
-                print("Model saved in file: {}".format(save_path))
+                t.set_postfix(model=save_path)
+                # print("Model saved in file: {}".format(save_path))
 
-            step += 1
-
-        if (step - 1) % save_step != 0:
+        if (_step - 1) % save_step != 0:
             save_path = saver.save(sess, model_name, global_step=global_step)
             print("Model saved in file: {}".format(save_path))
 
@@ -592,7 +593,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
 
 # region Training Wrappers
 def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
-                 display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
+                 global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
                  config=None, test_image_path=None, ckpt_name="osvos"):
     """Train OSVOS parent network
     Args:
@@ -600,13 +601,13 @@ def train_parent(dataset, initial_ckpt, supervison, learning_rate, logs_path, ma
     Returns:
     """
     finetune = 0
-    _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
+    _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
            ckpt_name)
 
 
 def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
-                   display_step, global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
+                   global_step, iter_mean_grad=1, batch_size=1, momentum=0.9, resume_training=False,
                    config=None, test_image_path=None, ckpt_name="osvos"):
     """Finetune OSVOS
     Args:
@@ -614,7 +615,7 @@ def train_finetune(dataset, initial_ckpt, supervison, learning_rate, logs_path, 
     Returns:
     """
     finetune = 1
-    _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step, display_step,
+    _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
            global_step, iter_mean_grad, batch_size, momentum, resume_training, config, finetune, test_image_path,
            ckpt_name)
 # endregion

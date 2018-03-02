@@ -61,7 +61,7 @@ def run_demo(seq_name, max_training_iters=500, **kwargs):
             with tf.device('/gpu:' + str(gpu_id)):
                 global_step = tf.Variable(0, name='global_step', trainable=False)
                 osvos.train_finetune(dataset, parent_path, side_supervision, learning_rate, logs_path, max_training_iters,
-                                     save_step, display_step, global_step, iter_mean_grad=1, ckpt_name=seq_name)
+                                     save_step, global_step, iter_mean_grad=1, ckpt_name=seq_name)
 
     # Test the network
     with tf.Graph().as_default():
@@ -91,8 +91,6 @@ if __name__ == "__main__":
                         help='Level of the side outputs supervision: 1-Strong 2-Weak 3-No supervision')
     parser.add_argument('--learning-rate', '-lr', type=float, help='the base learning rate')
     parser.add_argument('--save-step', '-ss', type=int, help='number of iterations to run before saving')
-    parser.add_argument('--display-step', '-ds', type=int,
-                        help='number of iterations to run before updating the display')
     # parse arguments
     args = parser.parse_args()
     seq = args.seq_name
