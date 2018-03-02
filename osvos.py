@@ -216,7 +216,7 @@ def load_vgg_imagenet(ckpt_path):
     return init_fn
 
 
-def class_balanced_cross_entropy_loss(output, label):
+def class_balanced_cross_entropy_loss(output, label, name=""):
     """Define the class balanced cross entropy loss to train the network
     Args:
     output: Output of the network
@@ -224,21 +224,22 @@ def class_balanced_cross_entropy_loss(output, label):
     Returns:
     Tensor that evaluates the loss
     """
+    _name = "cross-entropy" + name
+    with tf.name_scope(_name):
+        labels = tf.cast(tf.greater(label, 0.5), tf.float32)
 
-    labels = tf.cast(tf.greater(label, 0.5), tf.float32)
+        num_labels_pos = tf.reduce_sum(labels)
+        num_labels_neg = tf.reduce_sum(1.0 - labels)
+        num_total = num_labels_pos + num_labels_neg
 
-    num_labels_pos = tf.reduce_sum(labels)
-    num_labels_neg = tf.reduce_sum(1.0 - labels)
-    num_total = num_labels_pos + num_labels_neg
+        output_gt_zero = tf.cast(tf.greater_equal(output, 0), tf.float32)
+        loss_val = tf.multiply(output, (labels - output_gt_zero)) - tf.log(
+            1 + tf.exp(output - 2 * tf.multiply(output, output_gt_zero)))
 
-    output_gt_zero = tf.cast(tf.greater_equal(output, 0), tf.float32)
-    loss_val = tf.multiply(output, (labels - output_gt_zero)) - tf.log(
-        1 + tf.exp(output - 2 * tf.multiply(output, output_gt_zero)))
+        loss_pos = tf.reduce_sum(-tf.multiply(labels, loss_val))
+        loss_neg = tf.reduce_sum(-tf.multiply(1.0 - labels, loss_val))
 
-    loss_pos = tf.reduce_sum(-tf.multiply(labels, loss_val))
-    loss_neg = tf.reduce_sum(-tf.multiply(1.0 - labels, loss_val))
-
-    final_loss = num_labels_neg / num_total * loss_pos + num_labels_pos / num_total * loss_neg
+        final_loss = num_labels_neg / num_total * loss_pos + num_labels_pos / num_total * loss_neg
 
     return final_loss
 
@@ -427,8 +428,8 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     tf.logging.set_verbosity(tf.logging.INFO)
 
     # Prepare the input data
-    input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3])
-    input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1])
+    input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3], name='input-image')
+    input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1], name='input-label')
 
     # Create the network
     with slim.arg_scope(osvos_arg_scope()):
@@ -441,16 +442,20 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     # Define loss
     with tf.name_scope('losses'):
         if supervison == 1 or supervison == 2:
-            dsn_2_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_2-cr'], input_label)
+            dsn_2_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_2-cr'],
+                                                           input_label, name="dsn_2_loss")
             tf.summary.scalar('dsn_2_loss', dsn_2_loss)
-            dsn_3_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_3-cr'], input_label)
+            dsn_3_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_3-cr'],
+                                                           input_label, name="dsn_3_loss")
             tf.summary.scalar('dsn_3_loss', dsn_3_loss)
-            dsn_4_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_4-cr'], input_label)
+            dsn_4_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_4-cr'],
+                                                           input_label, name="dsn_4_loss")
             tf.summary.scalar('dsn_4_loss', dsn_4_loss)
-            dsn_5_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_5-cr'], input_label)
+            dsn_5_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_5-cr'],
+                                                           input_label, name="dsn_5_loss")
             tf.summary.scalar('dsn_5_loss', dsn_5_loss)
 
-        main_loss = class_balanced_cross_entropy_loss(net, input_label)
+        main_loss = class_balanced_cross_entropy_loss(net, input_label, name="main_loss")
         tf.summary.scalar('main_loss', main_loss)
 
         if supervison == 1:
