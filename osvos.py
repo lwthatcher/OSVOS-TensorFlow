@@ -399,6 +399,40 @@ def class_balanced_cross_entropy_loss_theoretical(output, label):
     final_loss = -num_labels_neg / num_total * loss_pos - num_labels_pos / num_total * loss_neg
 
     return final_loss
+
+
+# noinspection PyUnboundLocalVariable
+def calc_total_loss(net, end_points, input_label, supervison):
+    with tf.name_scope('losses'):
+        if supervison == 1 or supervison == 2:
+            dsn_2_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_2-cr'],
+                                                           input_label, name="dsn_2_loss")
+            tf.summary.scalar('dsn_2_loss', dsn_2_loss)
+            dsn_3_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_3-cr'],
+                                                           input_label, name="dsn_3_loss")
+            tf.summary.scalar('dsn_3_loss', dsn_3_loss)
+            dsn_4_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_4-cr'],
+                                                           input_label, name="dsn_4_loss")
+            tf.summary.scalar('dsn_4_loss', dsn_4_loss)
+            dsn_5_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_5-cr'],
+                                                           input_label, name="dsn_5_loss")
+            tf.summary.scalar('dsn_5_loss', dsn_5_loss)
+
+        main_loss = class_balanced_cross_entropy_loss(net, input_label, name="main_loss")
+        tf.summary.scalar('main_loss', main_loss)
+
+        if supervison == 1:
+            output_loss = dsn_2_loss + dsn_3_loss + dsn_4_loss + dsn_5_loss + main_loss
+        elif supervison == 2:
+            output_loss = 0.5 * dsn_2_loss + 0.5 * dsn_3_loss + 0.5 * dsn_4_loss + 0.5 * dsn_5_loss + main_loss
+        elif supervison == 3:
+            output_loss = main_loss
+        else:
+            sys.exit('Incorrect supervision id, select 1 for supervision of the side outputs, 2 for weak supervision '
+                     'of the side outputs and 3 for no supervision of the side outputs')
+        total_loss = output_loss + tf.add_n(tf.losses.get_regularization_losses())
+        return total_loss
+
 # endregion
 
 
@@ -449,35 +483,8 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
         init_weights = load_vgg_imagenet(initial_ckpt)
 
     # Define loss
-    with tf.name_scope('losses'):
-        if supervison == 1 or supervison == 2:
-            dsn_2_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_2-cr'],
-                                                           input_label, name="dsn_2_loss")
-            tf.summary.scalar('dsn_2_loss', dsn_2_loss)
-            dsn_3_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_3-cr'],
-                                                           input_label, name="dsn_3_loss")
-            tf.summary.scalar('dsn_3_loss', dsn_3_loss)
-            dsn_4_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_4-cr'],
-                                                           input_label, name="dsn_4_loss")
-            tf.summary.scalar('dsn_4_loss', dsn_4_loss)
-            dsn_5_loss = class_balanced_cross_entropy_loss(end_points['osvos/score-dsn_5-cr'],
-                                                           input_label, name="dsn_5_loss")
-            tf.summary.scalar('dsn_5_loss', dsn_5_loss)
-
-        main_loss = class_balanced_cross_entropy_loss(net, input_label, name="main_loss")
-        tf.summary.scalar('main_loss', main_loss)
-
-        if supervison == 1:
-            output_loss = dsn_2_loss + dsn_3_loss + dsn_4_loss + dsn_5_loss + main_loss
-        elif supervison == 2:
-            output_loss = 0.5 * dsn_2_loss + 0.5 * dsn_3_loss + 0.5 * dsn_4_loss + 0.5 * dsn_5_loss + main_loss
-        elif supervison == 3:
-            output_loss = main_loss
-        else:
-            sys.exit('Incorrect supervision id, select 1 for supervision of the side outputs, 2 for weak supervision '
-                     'of the side outputs and 3 for no supervision of the side outputs')
-        total_loss = output_loss + tf.add_n(tf.losses.get_regularization_losses())
-        tf.summary.scalar('total_loss', total_loss)
+    total_loss = calc_total_loss(net, end_points, input_label, supervison)
+    tf.summary.scalar('total_loss', total_loss)
 
     # Define optimization method
     with tf.name_scope('optimization'):
