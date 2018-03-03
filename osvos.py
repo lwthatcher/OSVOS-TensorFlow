@@ -356,7 +356,7 @@ def class_balanced_cross_entropy_loss(output, label, name=""):
     Returns:
     Tensor that evaluates the loss
     """
-    _name = "cross-entropy" + name
+    _name = name or "cross-entropy"
     with tf.name_scope(_name):
         labels = tf.cast(tf.greater(label, 0.5), tf.float32)
 
@@ -436,6 +436,33 @@ def calc_total_loss(net, end_points, input_label, supervison):
 # endregion
 
 
+def add_optimizer(total_loss, iter_mean_grad, learning_rate, momentum, global_step):
+    with tf.name_scope('optimization'):
+        tf.summary.scalar('learning_rate', learning_rate)
+        optimizer = tf.train.MomentumOptimizer(learning_rate, momentum)
+        grads_and_vars = optimizer.compute_gradients(total_loss)
+        with tf.name_scope('grad_accumulator'):
+            grad_accumulator = {}
+            for ind in range(0, len(grads_and_vars)):
+                if grads_and_vars[ind][0] is not None:
+                    grad_accumulator[ind] = tf.ConditionalAccumulator(grads_and_vars[ind][0].dtype)
+        with tf.name_scope('apply_gradient'):
+            layer_lr = parameter_lr()
+            grad_accumulator_ops = []
+            for var_ind, grad_acc in grad_accumulator.items():
+                var_name = str(grads_and_vars[var_ind][1].name).split(':')[0]
+                var_grad = grads_and_vars[var_ind][0]
+                grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * layer_lr[var_name],
+                                                                local_step=global_step))
+        with tf.name_scope('take_gradients'):
+            mean_grads_and_vars = []
+            for var_ind, grad_acc in grad_accumulator.items():
+                mean_grads_and_vars.append(
+                    (grad_acc.take_grad(iter_mean_grad), grads_and_vars[var_ind][1]))
+            apply_gradient_op = optimizer.apply_gradients(mean_grads_and_vars, global_step=global_step)
+            return grad_accumulator_ops, apply_gradient_op
+
+
 # region Train Method
 # noinspection PyUnboundLocalVariable
 def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_training_iters, save_step,
@@ -487,29 +514,8 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     tf.summary.scalar('total_loss', total_loss)
 
     # Define optimization method
-    with tf.name_scope('optimization'):
-        tf.summary.scalar('learning_rate', learning_rate)
-        optimizer = tf.train.MomentumOptimizer(learning_rate, momentum)
-        grads_and_vars = optimizer.compute_gradients(total_loss)
-        with tf.name_scope('grad_accumulator'):
-            grad_accumulator = {}
-            for ind in range(0, len(grads_and_vars)):
-                if grads_and_vars[ind][0] is not None:
-                    grad_accumulator[ind] = tf.ConditionalAccumulator(grads_and_vars[ind][0].dtype)
-        with tf.name_scope('apply_gradient'):
-            layer_lr = parameter_lr()
-            grad_accumulator_ops = []
-            for var_ind, grad_acc in grad_accumulator.items():
-                var_name = str(grads_and_vars[var_ind][1].name).split(':')[0]
-                var_grad = grads_and_vars[var_ind][0]
-                grad_accumulator_ops.append(grad_acc.apply_grad(var_grad * layer_lr[var_name],
-                                                                local_step=global_step))
-        with tf.name_scope('take_gradients'):
-            mean_grads_and_vars = []
-            for var_ind, grad_acc in grad_accumulator.items():
-                mean_grads_and_vars.append(
-                    (grad_acc.take_grad(iter_mean_grad), grads_and_vars[var_ind][1]))
-            apply_gradient_op = optimizer.apply_gradients(mean_grads_and_vars, global_step=global_step)
+    grad_accumulator_ops, apply_gradient_op = add_optimizer(total_loss, iter_mean_grad, learning_rate, momentum, global_step)
+
     # Log training info
     merged_summary_op = tf.summary.merge_all()
 
