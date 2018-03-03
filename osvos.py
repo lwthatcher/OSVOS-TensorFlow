@@ -573,7 +573,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
                 batch_image, batch_label = dataset.next_batch(batch_size, 'train')
                 image = preprocess_img(batch_image[0])
                 label = preprocess_labels(batch_label[0])
-                run_res = sess.run([total_loss, merged_summary_op] + grad_accumulator_ops,
+                run_res = sess.run([total_loss, merged_summary_op, grad_accumulator_ops],
                                    feed_dict={input_image: image, input_label: label})
                 batch_loss = run_res[0]
                 summary = run_res[1]
@@ -669,13 +669,10 @@ def test(dataset, checkpoint_file, result_path, config=None):
         saver.restore(sess, checkpoint_file)
         if not os.path.exists(result_path):
             os.makedirs(result_path)
-        for frame in range(0, dataset.get_test_size()):
+        for frame in trange(0, dataset.get_test_size()):
             img, curr_img = dataset.next_batch(batch_size, 'test')
             curr_frame = curr_img[0].split('/')[-1].split('.')[0] + '.png'
             image = preprocess_img(img[0])
             res = sess.run(probabilities, feed_dict={input_image: image})
             res_np = res.astype(np.float32)[0, :, :, 0] > 162.0/255.0
             scipy.misc.imsave(os.path.join(result_path, curr_frame), res_np.astype(np.float32))
-            print('Saving ' + os.path.join(result_path, curr_frame))
-
-
