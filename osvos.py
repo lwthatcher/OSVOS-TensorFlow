@@ -344,6 +344,41 @@ def parameter_lr():
     vars_corresp['osvos/upscore-fuse/weights'] = 0.01
     vars_corresp['osvos/upscore-fuse/biases'] = 0.02
     return vars_corresp
+
+
+def setup_config(config):
+    if config is None:
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        # config.log_device_placement = True
+        config.allow_soft_placement = True
+    return config
+
+
+def setup_pretrained_model(sess, logs_path, resume_training, finetune, initial_ckpt, global_step):
+    last_ckpt_path = tf.train.latest_checkpoint(logs_path)
+    if last_ckpt_path is not None and resume_training:
+        # Load last checkpoint
+        print('Initializing from previous checkpoint...')
+        saver.restore(sess, last_ckpt_path)
+        return global_step.eval() + 1
+    else:
+        # Load pre-trained model
+        if finetune == 0:
+            print('Initializing from pre-trained imagenet model...')
+            init_weights(sess)
+        else:
+            print('Initializing from specified pre-trained model...')
+            # init_weights(sess)
+            var_list = []
+            for var in tf.global_variables():
+                var_type = var.name.split('/')[-1]
+                if 'weights' in var_type or 'bias' in var_type:
+                    var_list.append(var)
+            saver_res = tf.train.Saver(var_list=var_list)
+            saver_res.restore(sess, initial_ckpt)
+        return 1
+
 # endregion
 
 
@@ -436,6 +471,7 @@ def calc_total_loss(net, end_points, input_label, supervison):
 # endregion
 
 
+# region Optimizers
 def add_optimizer(total_loss, iter_mean_grad, learning_rate, momentum, global_step):
     with tf.name_scope('optimization'):
         tf.summary.scalar('learning_rate', learning_rate)
@@ -461,6 +497,7 @@ def add_optimizer(total_loss, iter_mean_grad, learning_rate, momentum, global_st
                     (grad_acc.take_grad(iter_mean_grad), grads_and_vars[var_ind][1]))
             apply_gradient_op = optimizer.apply_gradients(mean_grads_and_vars, global_step=global_step)
             return grad_accumulator_ops, apply_gradient_op
+# endregion
 
 
 # region Train Method
@@ -489,15 +526,10 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     Returns:
     """
     model_name = os.path.join(logs_path, ckpt_name+".ckpt")
-    if config is None:
-        config = tf.ConfigProto()
-        config.gpu_options.allow_growth = True
-        # config.log_device_placement = True
-        config.allow_soft_placement = True
-
+    config = setup_config(config)
     tf.logging.set_verbosity(tf.logging.INFO)
 
-    # Prepare the input data
+    # PLACEHOLDERS
     input_image = tf.placeholder(tf.float32, [batch_size, None, None, 3], name='input-image')
     input_label = tf.placeholder(tf.float32, [batch_size, None, None, 1], name='input-label')
 
@@ -509,11 +541,11 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     if finetune == 0:
         init_weights = load_vgg_imagenet(initial_ckpt)
 
-    # Define loss
+    # LOSS
     total_loss = calc_total_loss(net, end_points, input_label, supervison)
     tf.summary.scalar('total_loss', total_loss)
 
-    # Define optimization method
+    # OPTIMIZER
     grad_accumulator_ops, apply_gradient_op = add_optimizer(total_loss, iter_mean_grad, learning_rate, momentum, global_step)
 
     # Log training info
@@ -523,8 +555,6 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     if test_image_path is not None:
         probabilities = tf.nn.sigmoid(net)
         img_summary = tf.summary.image("Output probabilities", probabilities, max_outputs=1)
-    # Initialize variables
-    init = tf.global_variables_initializer()
 
     # Create objects to record timing and memory of the graph execution
     # run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE) # Option in the session options=run_options
@@ -532,7 +562,7 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
     # summary_writer.add_run_metadata(run_metadata, 'step%d' % i)
     with tf.Session(config=config) as sess:
         print('Init variable')
-        sess.run(init)
+        sess.run(tf.global_variables_initializer())
 
         # op to write logs to Tensorboard
         summary_writer = tf.summary.FileWriter(logs_path, graph=tf.get_default_graph())
@@ -540,33 +570,13 @@ def _train(dataset, initial_ckpt, supervison, learning_rate, logs_path, max_trai
         # Create saver to manage checkpoints
         saver = tf.train.Saver(max_to_keep=None)
 
-        last_ckpt_path = tf.train.latest_checkpoint(logs_path)
-        if last_ckpt_path is not None and resume_training:
-            # Load last checkpoint
-            print('Initializing from previous checkpoint...')
-            saver.restore(sess, last_ckpt_path)
-            step = global_step.eval() + 1
-        else:
-            # Load pre-trained model
-            if finetune == 0:
-                print('Initializing from pre-trained imagenet model...')
-                init_weights(sess)
-            else:
-                print('Initializing from specified pre-trained model...')
-                # init_weights(sess)
-                var_list = []
-                for var in tf.global_variables():
-                    var_type = var.name.split('/')[-1]
-                    if 'weights' in var_type or 'bias' in var_type:
-                        var_list.append(var)
-                saver_res = tf.train.Saver(var_list=var_list)
-                saver_res.restore(sess, initial_ckpt)
-            step = 1
+        # setup weights
+        step = setup_pretrained_model(sess, logs_path, resume_training, finetune, initial_ckpt, global_step)
         sess.run(interp_surgery(tf.global_variables()))
         print('Weights initialized')
 
         print('Start training')
-        t = trange(step, max_training_iters + 1)
+        t = trange(step, max_training_iters + 1, dynamic_ncols=True)
         for _step in t:
             # Average the gradient
             for _ in range(0, iter_mean_grad):
